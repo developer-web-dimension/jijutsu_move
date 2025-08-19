@@ -649,6 +649,7 @@ import os
 if not os.path.exists('templates'):
     os.makedirs('templates')
 
+
 html_template = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -942,6 +943,93 @@ html_template = '''<!DOCTYPE html>
             background: rgba(244, 67, 54, 0.8);
         }
         
+        /* Demo Video Styles */
+        .demo-video-screen {
+            text-align: center;
+            padding: 30px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .demo-video-container h2 {
+            font-size: 2em;
+            margin-bottom: 15px;
+            color: #4ecdc4;
+        }
+        
+        .demo-video-container p {
+            font-size: 1.1em;
+            margin-bottom: 25px;
+            opacity: 0.9;
+        }
+        
+        .video-wrapper {
+            position: relative;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+        
+        #demoVideo {
+            width: 100%;
+            max-width: 600px;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .demo-controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+        
+        .demo-info {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .demo-info p {
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .demo-info ul {
+            text-align: left;
+            margin: 10px auto;
+            display: inline-block;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+        
+        .demo-info li {
+            margin-bottom: 5px;
+            opacity: 0.9;
+        }
+        
+        @media (max-width: 768px) {
+            .demo-video-screen {
+                padding: 20px;
+            }
+            
+            .demo-controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .demo-controls .btn {
+                width: 200px;
+            }
+        }
+        
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -983,11 +1071,43 @@ html_template = '''<!DOCTYPE html>
         <div id="startupScreen" class="startup-screen">
             <h2>Welcome to Jujutsu Hand Sign Training!</h2>
             <p>Master the ancient art of hand signs with AI-powered training</p>
-            <button class="btn btn-primary" onclick="startTraining()" style="font-size: 1.2em; padding: 15px 30px;">
+            <button class="btn btn-primary" onclick="showDemoVideo()" style="font-size: 1.2em; padding: 15px 30px;">
                 🎯 Start Training
             </button>
             <div style="margin-top: 30px; opacity: 0.7;">
                 <p>📋 Make sure your camera is connected and the 'handsign' folder contains your training images</p>
+            </div>
+        </div>
+        
+        <!-- Demo Video Screen -->
+        <div id="demoVideoScreen" class="demo-video-screen" style="display: none;">
+            <div class="demo-video-container">
+                <h2>🎥 Training Demo</h2>
+                <p>Watch this quick demo to learn how to use the hand sign trainer</p>
+                
+                <div class="video-wrapper">
+                    <video id="demoVideo" controls autoplay muted>
+                        <source src="/static/vikas.mp4" type="video/mp4">
+                        <p>Your browser doesn't support video playback. <button class="btn btn-primary" onclick="skipDemo()">Skip to Training</button></p>
+                    </video>
+                </div>
+                
+                <div class="demo-controls">
+                    <button class="btn btn-secondary" onclick="skipDemo()">⏭️ Skip Demo</button>
+                    <button class="btn btn-primary" onclick="proceedToTraining()" style="display: none;" id="proceedButton">
+                        🚀 Start Training Now
+                    </button>
+                </div>
+                
+                <div class="demo-info">
+                    <p>💡 <strong>Tips:</strong></p>
+                    <ul style="text-align: left; margin: 0 auto; display: inline-block;">
+                        <li>Position your hand clearly in front of the camera</li>
+                        <li>Maintain steady hand position for better accuracy</li>
+                        <li>Follow the reference images shown on the right</li>
+                        <li>Wait for the accuracy to reach 65% to advance</li>
+                    </ul>
+                </div>
             </div>
         </div>
         
@@ -1103,6 +1223,7 @@ html_template = '''<!DOCTYPE html>
                 } else if (data.message.includes('stopped')) {
                     document.getElementById('startupScreen').style.display = 'block';
                     document.getElementById('trainingInterface').style.display = 'none';
+                    document.getElementById('demoVideoScreen').style.display = 'none';
                     
                     // Hide top elements
                     document.getElementById('topProgressBar').style.display = 'none';
@@ -1122,6 +1243,12 @@ html_template = '''<!DOCTYPE html>
                         clearInterval(frameProcessingInterval);
                         frameProcessingInterval = null;
                     }
+                    
+                    // Reset demo video
+                    const demoVideo = document.getElementById('demoVideo');
+                    demoVideo.pause();
+                    demoVideo.currentTime = 0;
+                    document.getElementById('proceedButton').style.display = 'none';
                     
                     showNotification('Training stopped! 🛑');
                 }
@@ -1224,6 +1351,47 @@ html_template = '''<!DOCTYPE html>
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 3000);
+        }
+        
+        function showDemoVideo() {
+            // Hide startup screen and show demo video
+            document.getElementById('startupScreen').style.display = 'none';
+            document.getElementById('demoVideoScreen').style.display = 'block';
+            
+            const demoVideo = document.getElementById('demoVideo');
+            const proceedButton = document.getElementById('proceedButton');
+            
+            // Show proceed button when video ends
+            demoVideo.addEventListener('ended', function() {
+                proceedButton.style.display = 'inline-block';
+                showNotification('Demo complete! Ready to start training? 🎬');
+            });
+            
+            // Auto-play the demo video
+            demoVideo.play().catch(error => {
+                console.log('Auto-play failed:', error);
+                showNotification('Click play to watch the demo video 📹', 'error');
+            });
+            
+            showNotification('Watching training demo... ⏯️');
+        }
+        
+        function skipDemo() {
+            showNotification('Demo skipped! Starting training... ⏭️');
+            proceedToTraining();
+        }
+        
+        function proceedToTraining() {
+            // Hide demo screen
+            document.getElementById('demoVideoScreen').style.display = 'none';
+            
+            // Pause and reset demo video
+            const demoVideo = document.getElementById('demoVideo');
+            demoVideo.pause();
+            demoVideo.currentTime = 0;
+            
+            // Start the actual training
+            startTraining();
         }
         
         async function initCamera() {
@@ -1341,7 +1509,13 @@ if __name__ == "__main__":
         os.makedirs("handsign")
         print("📁 Created 'handsign' folder. Please add your hand sign images here.")
     
+    print("🌐 Starting Flask server with WebSocket support...")
     print("🔗 Open your browser and go to: http://localhost:5000")
-
+    print("📁 Make sure your hand sign images are in the 'handsign' folder")
+    print("⚡ WebSocket enabled for real-time frame processing!")
+    
+    # Install required packages
+    print("\n📦 Make sure you have installed the required packages:")
+    print("pip install flask flask-socketio opencv-python mediapipe numpy pillow")
     
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
