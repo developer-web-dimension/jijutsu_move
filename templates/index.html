@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jujutsu Hand Sign Trainer</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        
+        /* Top Progress Bar */
+        .top-progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.2);
+            z-index: 1000;
+            display: none;
+        }
+        
+        .top-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        /* Top Left Sign Preview */
+        .top-sign-preview {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 999;
+            background: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            padding: 10px;
+            display: none;
+            max-width: 120px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .top-sign-preview img {
+            width: 100%;
+            border-radius: 5px;
+            margin-bottom: 8px;
+        }
+        
+        .top-sign-preview .sign-info {
+            text-align: center;
+            font-size: 0.8em;
+        }
+        
+        .top-sign-preview .sign-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        
+        .top-sign-preview .sign-accuracy {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-top: 30px; /* Space for top elements */
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin: 0;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 20px;
+            align-items: start;
+        }
+        
+        .video-section {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .side-panel {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        #videoElement {
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            display: none;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .reference-image {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .reference-image img {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+        
+        .status-panel {
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .accuracy-display {
+            font-size: 2em;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .startup-screen {
+            text-align: center;
+            padding: 50px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .startup-screen h2 {
+            font-size: 2em;
+            margin-bottom: 20px;
+        }
+        
+        .startup-screen p {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.8;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+        
+        .info-item {
+            background: rgba(255,255,255,0.1);
+            padding: 8px;
+            border-radius: 5px;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateX(300px);
+            transition: all 0.3s ease;
+        }
+        
+        .notification.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        
+        .notification.success {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+        }
+        
+        .notification.error {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+        }
+        
+        .connection-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+        }
+        
+        .connection-status.connected {
+            background: rgba(76, 175, 80, 0.8);
+        }
+        
+        .connection-status.disconnected {
+            background: rgba(244, 67, 54, 0.8);
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    <!-- Include Socket.IO client -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+</head>
+<body>
+    <!-- Top Progress Bar -->
+    <div id="topProgressBar" class="top-progress-bar">
+        <div id="topProgressFill" class="top-progress-fill"></div>
+    </div>
+    
+    <!-- Top Left Sign Preview -->
+    <div id="topSignPreview" class="top-sign-preview">
+        <img id="topSignImage" src="" alt="Current Sign">
+        <div class="sign-info">
+            <div id="topSignName" class="sign-name">Loading...</div>
+            <div id="topSignAccuracy" class="sign-accuracy">0%</div>
+        </div>
+    </div>
+    
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-status disconnected">
+        Connecting...
+    </div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>🥷 Jujutsu Hand Sign Trainer</h1>
+        </div>
+        
+        <div id="startupScreen" class="startup-screen">
+            <h2>Welcome to Jujutsu Hand Sign Training!</h2>
+            <p>Master the ancient art of hand signs with AI-powered training</p>
+            <button class="btn btn-primary" onclick="startTraining()" style="font-size: 1.2em; padding: 15px 30px;">
+                🎯 Start Training
+            </button>
+            <div style="margin-top: 30px; opacity: 0.7;">
+                <p>📋 Make sure your camera is connected and the 'handsign' folder contains your training images</p>
+            </div>
+        </div>
+        
+        <div id="trainingInterface" class="main-content" style="display: none;">
+            <div class="video-section">
+                <video id="videoElement" autoplay muted></video>
+                <canvas id="canvas"></canvas>
+                <div id="cameraError" style="display: none; text-align: center; padding: 50px; background: rgba(255,0,0,0.2); border-radius: 10px; margin-bottom: 20px;">
+                    <h3>📷 Camera Error</h3>
+                    <p>Unable to access camera. Please check:</p>
+                    <ul style="text-align: left; margin: 20px 0;">
+                        <li>Camera is connected and not used by other apps</li>
+                        <li>Browser has camera permissions</li>
+                        <li>Try refreshing the page</li>
+                    </ul>
+                    <button class="btn btn-secondary" onclick="initCamera()">🔄 Retry Camera</button>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-secondary" onclick="previousSign()">⬅️ Previous</button>
+                    <button class="btn btn-secondary" onclick="nextSign()">Next ➡️</button>
+                    <button class="btn btn-danger" onclick="stopTraining()">🛑 Stop</button>
+                    <button class="btn btn-secondary" onclick="resetProgress()">🔄 Reset</button>
+                </div>
+            </div>
+            
+            <div class="side-panel">
+                <div class="reference-image">
+                    <h3>🎯 Target Sign</h3>
+                    <div id="signName" style="font-size: 1.2em; margin-bottom: 10px;">Loading...</div>
+                    <img id="referenceImage" src="" alt="Reference Sign" style="display: none;">
+                    <div id="noImageText" style="padding: 50px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                        No reference image available
+                    </div>
+                </div>
+                
+                <div class="status-panel">
+                    <h3>📊 Training Status</h3>
+                    <div class="accuracy-display" id="accuracyDisplay">0%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+                    </div>
+                    <div id="statusText" style="text-align: center; margin-top: 10px;">Position your hand</div>
+                    
+                    <div class="info-grid" style="margin-top: 15px;">
+                        <div class="info-item">
+                            <strong>Current:</strong> <span id="currentSign">-</span>
+                        </div>
+                        <div class="info-item">
+                            <strong>Progress:</strong> <span id="progressText">0/0</span>
+                        </div>
+                        <div class="info-item">
+                            <strong>Stability:</strong> <span id="stabilityText">0/5</span>
+                        </div>
+                        <div class="info-item">
+                            <strong>Status:</strong> <span id="trainingStatus">Ready</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="notification" class="notification"></div>
+    
+    <script>
+        // Initialize Socket.IO connection
+        const socket = io();
+        
+        let videoElement = null;
+        let canvas = null;
+        let ctx = null;
+        let frameProcessingInterval = null;
+        let isTrainingActive = false;
+        
+        // Connection status handlers
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            document.getElementById('connectionStatus').textContent = 'Connected';
+            document.getElementById('connectionStatus').className = 'connection-status connected';
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            document.getElementById('connectionStatus').textContent = 'Disconnected';
+            document.getElementById('connectionStatus').className = 'connection-status disconnected';
+        });
+        
+        // Socket event listeners
+        socket.on('training_response', function(data) {
+            if (data.success) {
+                if (data.message.includes('started')) {
+                    document.getElementById('startupScreen').style.display = 'none';
+                    document.getElementById('trainingInterface').style.display = 'grid';
+                    
+                    // Show top elements
+                    document.getElementById('topProgressBar').style.display = 'block';
+                    document.getElementById('topSignPreview').style.display = 'block';
+                    
+                    isTrainingActive = true;
+                    
+                    // Start periodic status updates
+                    setInterval(() => {
+                        if (isTrainingActive) {
+                            socket.emit('get_status');
+                            socket.emit('get_current_sign_image');
+                        }
+                    }, 500);
+                    
+                    // Start frame processing
+                    frameProcessingInterval = setInterval(captureAndSendFrame, 100); // 10 FPS
+                    
+                    showNotification('Training started! 🎯');
+                } else if (data.message.includes('stopped')) {
+                    document.getElementById('startupScreen').style.display = 'block';
+                    document.getElementById('trainingInterface').style.display = 'none';
+                    
+                    // Hide top elements
+                    document.getElementById('topProgressBar').style.display = 'none';
+                    document.getElementById('topSignPreview').style.display = 'none';
+                    
+                    isTrainingActive = false;
+                    
+                    // Stop camera
+                    if (videoElement && videoElement.srcObject) {
+                        const tracks = videoElement.srcObject.getTracks();
+                        tracks.forEach(track => track.stop());
+                        videoElement.srcObject = null;
+                    }
+                    
+                    // Clear intervals
+                    if (frameProcessingInterval) {
+                        clearInterval(frameProcessingInterval);
+                        frameProcessingInterval = null;
+                    }
+                    
+                    showNotification('Training stopped! 🛑');
+                }
+            } else {
+                showNotification(data.message, 'error');
+            }
+        });
+        
+        socket.on('frame_result', function(data) {
+            if (data.success) {
+                // Update real-time accuracy in UI
+                updateInstantFeedback(data);
+                
+                if (data.training_complete) {
+                    showNotification('🏆 Training Complete! All signs mastered!', 'success');
+                    setTimeout(() => {
+                        stopTraining();
+                    }, 3000);
+                } else if (data.sign_completed) {
+                    showNotification('✅ Sign completed! Moving to next...', 'success');
+                }
+            }
+        });
+        
+        socket.on('status_update', function(data) {
+            // Update main UI
+            document.getElementById('accuracyDisplay').textContent = `${data.accuracy.toFixed(1)}%`;
+            document.getElementById('statusText').textContent = data.status;
+            document.getElementById('currentSign').textContent = data.current_sign || 'Complete';
+            document.getElementById('progressText').textContent = `${data.completed_count}/${data.total_signs}`;
+            document.getElementById('stabilityText').textContent = `${data.stable_detections}/${data.required_detections}`;
+            
+            // Update progress bars
+            const progressPercent = (data.completed_count / data.total_signs) * 100;
+            document.getElementById('progressFill').style.width = `${progressPercent}%`;
+            document.getElementById('topProgressFill').style.width = `${progressPercent}%`;
+            
+            // Update top sign preview
+            document.getElementById('topSignName').textContent = data.current_sign || 'Complete';
+            document.getElementById('topSignAccuracy').textContent = `${data.accuracy.toFixed(1)}%`;
+            
+            // Update accuracy colors
+            const accuracyElement = document.getElementById('accuracyDisplay');
+            const topAccuracyElement = document.getElementById('topSignAccuracy');
+            
+            let color;
+            if (data.accuracy >= 65) {
+                color = '#4ecdc4';
+            } else if (data.accuracy >= 45) {
+                color = '#ffa726';
+            } else {
+                color = '#ff6b6b';
+            }
+            
+            accuracyElement.style.color = color;
+            topAccuracyElement.style.color = color;
+        });
+        
+        socket.on('sign_image_update', function(data) {
+            const imgElement = document.getElementById('referenceImage');
+            const noImageElement = document.getElementById('noImageText');
+            const signNameElement = document.getElementById('signName');
+            const topSignImage = document.getElementById('topSignImage');
+            
+            if (data.image) {
+                // Update main reference image
+                imgElement.src = `data:image/jpeg;base64,${data.image}`;
+                imgElement.style.display = 'block';
+                noImageElement.style.display = 'none';
+                
+                // Update top sign preview image
+                topSignImage.src = `data:image/jpeg;base64,${data.image}`;
+            } else {
+                imgElement.style.display = 'none';
+                noImageElement.style.display = 'block';
+                
+                // Clear top sign preview image
+                topSignImage.src = '';
+            }
+            
+            signNameElement.textContent = data.sign_name || 'Training Complete';
+        });
+        
+        socket.on('sign_changed', function(data) {
+            showNotification(data.message);
+            socket.emit('get_current_sign_image');
+        });
+        
+        socket.on('progress_reset', function(data) {
+            showNotification(data.message);
+            socket.emit('get_current_sign_image');
+        });
+        
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+        
+        async function initCamera() {
+            try {
+                videoElement = document.getElementById('videoElement');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }
+                });
+                
+                videoElement.srcObject = stream;
+                videoElement.style.display = 'block';
+                document.getElementById('cameraError').style.display = 'none';
+                
+                // Set canvas size
+                canvas.width = 640;
+                canvas.height = 480;
+                
+                showNotification('Camera connected successfully! 📷');
+                return true;
+            } catch (error) {
+                console.error('Camera error:', error);
+                document.getElementById('cameraError').style.display = 'block';
+                showNotification('Failed to access camera: ' + error.message, 'error');
+                return false;
+            }
+        }
+        
+        function captureAndSendFrame() {
+            if (!videoElement || !canvas || !ctx || !isTrainingActive) return;
+            
+            try {
+                // Draw video frame to canvas
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                
+                // Convert to base64
+                const frameData = canvas.toDataURL('image/jpeg', 0.6);
+                
+                // Send to backend via WebSocket
+                socket.emit('process_frame', { frame: frameData });
+            } catch (error) {
+                console.log('Frame capture error:', error);
+            }
+        }
+        
+        function updateInstantFeedback(data) {
+            // Update accuracy display immediately from frame processing
+            const accuracyElement = document.getElementById('accuracyDisplay');
+            accuracyElement.textContent = `${data.accuracy.toFixed(1)}%`;
+            
+            // Update accuracy color
+            if (data.accuracy >= 65) {
+                accuracyElement.style.color = '#4ecdc4';
+            } else if (data.accuracy >= 45) {
+                accuracyElement.style.color = '#ffa726';
+            } else {
+                accuracyElement.style.color = '#ff6b6b';
+            }
+            
+            // Update status
+            document.getElementById('statusText').textContent = data.status;
+            
+            // Visual feedback for hand detection
+            const videoElement = document.getElementById('videoElement');
+            if (data.hand_detected) {
+                videoElement.style.border = data.accuracy >= 65 ? '3px solid #4ecdc4' : '3px solid #ffa726';
+            } else {
+                videoElement.style.border = '3px solid #ff6b6b';
+            }
+        }
+        
+        async function startTraining() {
+            showNotification('Initializing training...', 'success');
+            
+            // First initialize camera
+            const cameraSuccess = await initCamera();
+            if (!cameraSuccess) {
+                return;
+            }
+            
+            // Then start training via WebSocket
+            socket.emit('start_training');
+        }
+        
+        function stopTraining() {
+            socket.emit('stop_training');
+        }
+        
+        function nextSign() {
+            socket.emit('next_sign');
+        }
+        
+        function previousSign() {
+            socket.emit('previous_sign');
+        }
+        
+        function resetProgress() {
+            if (confirm('Are you sure you want to reset all progress?')) {
+                socket.emit('reset_progress');
+            }
+        }
+    </script>
+</body>
+</html>
