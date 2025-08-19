@@ -871,6 +871,7 @@ html_template = '''<!DOCTYPE html>
             background: rgba(255,255,255,0.1);
             border-radius: 15px;
             backdrop-filter: blur(10px);
+            margin:15px;
         }
         
         .startup-screen h2 {
@@ -972,12 +973,13 @@ html_template = '''<!DOCTYPE html>
             border-radius: 10px;
             padding: 20px;
             margin-bottom: 25px;
+            height: 300px;
         }
         
         #demoVideo {
             width: 100%;
             max-width: 600px;
-            height: auto;
+            height: 300px;
             border-radius: 8px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.3);
         }
@@ -1017,7 +1019,7 @@ html_template = '''<!DOCTYPE html>
         
         @media (max-width: 768px) {
             .demo-video-screen {
-                padding: 20px;
+                padding: 4px;
             }
             
             .demo-controls {
@@ -1065,7 +1067,7 @@ html_template = '''<!DOCTYPE html>
     
     <div class="container">
         <div class="header">
-            <h1>🥷 Jujutsu Hand Sign Trainer</h1>
+            <h2>Jujutsu Hand Sign Trainer</h2>
         </div>
         
         <div id="startupScreen" class="startup-screen">
@@ -1074,15 +1076,12 @@ html_template = '''<!DOCTYPE html>
             <button class="btn btn-primary" onclick="showDemoVideo()" style="font-size: 1.2em; padding: 15px 30px;">
                 🎯 Start Training
             </button>
-            <div style="margin-top: 30px; opacity: 0.7;">
-                <p>📋 Make sure your camera is connected and the 'handsign' folder contains your training images</p>
-            </div>
         </div>
         
         <!-- Demo Video Screen -->
         <div id="demoVideoScreen" class="demo-video-screen" style="display: none;">
             <div class="demo-video-container">
-                <h2>🎥 Training Demo</h2>
+                <h2> Training Demo</h2>
                 <p>Watch this quick demo to learn how to use the hand sign trainer</p>
                 
                 <div class="video-wrapper">
@@ -1093,21 +1092,12 @@ html_template = '''<!DOCTYPE html>
                 </div>
                 
                 <div class="demo-controls">
-                    <button class="btn btn-secondary" onclick="skipDemo()">⏭️ Skip Demo</button>
+                    <button class="btn btn-secondary" onclick="skipDemo()">⏭ Skip Demo</button>
                     <button class="btn btn-primary" onclick="proceedToTraining()" style="display: none;" id="proceedButton">
-                        🚀 Start Training Now
+                        Start Training Now
                     </button>
                 </div>
                 
-                <div class="demo-info">
-                    <p>💡 <strong>Tips:</strong></p>
-                    <ul style="text-align: left; margin: 0 auto; display: inline-block;">
-                        <li>Position your hand clearly in front of the camera</li>
-                        <li>Maintain steady hand position for better accuracy</li>
-                        <li>Follow the reference images shown on the right</li>
-                        <li>Wait for the accuracy to reach 65% to advance</li>
-                    </ul>
-                </div>
             </div>
         </div>
         
@@ -1116,26 +1106,24 @@ html_template = '''<!DOCTYPE html>
                 <video id="videoElement" autoplay muted></video>
                 <canvas id="canvas"></canvas>
                 <div id="cameraError" style="display: none; text-align: center; padding: 50px; background: rgba(255,0,0,0.2); border-radius: 10px; margin-bottom: 20px;">
-                    <h3>📷 Camera Error</h3>
+                    <h3> Camera Error</h3>
                     <p>Unable to access camera. Please check:</p>
                     <ul style="text-align: left; margin: 20px 0;">
                         <li>Camera is connected and not used by other apps</li>
                         <li>Browser has camera permissions</li>
                         <li>Try refreshing the page</li>
                     </ul>
-                    <button class="btn btn-secondary" onclick="initCamera()">🔄 Retry Camera</button>
+                    <button class="btn btn-secondary" onclick="initCamera()">Retry Camera</button>
                 </div>
                 <div class="controls">
-                    <button class="btn btn-secondary" onclick="previousSign()">⬅️ Previous</button>
-                    <button class="btn btn-secondary" onclick="nextSign()">Next ➡️</button>
-                    <button class="btn btn-danger" onclick="stopTraining()">🛑 Stop</button>
-                    <button class="btn btn-secondary" onclick="resetProgress()">🔄 Reset</button>
+                    <button class="btn btn-danger" onclick="stopTraining()"> Stop</button>
+                    <button class="btn btn-secondary" onclick="resetProgress()"> Reset</button>
                 </div>
             </div>
             
             <div class="side-panel">
                 <div class="reference-image">
-                    <h3>🎯 Target Sign</h3>
+                    <h3>Target Sign</h3>
                     <div id="signName" style="font-size: 1.2em; margin-bottom: 10px;">Loading...</div>
                     <img id="referenceImage" src="" alt="Reference Sign" style="display: none;">
                     <div id="noImageText" style="padding: 50px; background: rgba(255,255,255,0.1); border-radius: 10px;">
@@ -1144,7 +1132,7 @@ html_template = '''<!DOCTYPE html>
                 </div>
                 
                 <div class="status-panel">
-                    <h3>📊 Training Status</h3>
+                    <h3>Training Status</h3>
                     <div class="accuracy-display" id="accuracyDisplay">0%</div>
                     <div class="progress-bar">
                         <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
@@ -1219,7 +1207,7 @@ html_template = '''<!DOCTYPE html>
                     // Start frame processing
                     frameProcessingInterval = setInterval(captureAndSendFrame, 100); // 10 FPS
                     
-                    showNotification('Training started! 🎯');
+                    showNotification('Training started!');
                 } else if (data.message.includes('stopped')) {
                     document.getElementById('startupScreen').style.display = 'block';
                     document.getElementById('trainingInterface').style.display = 'none';
@@ -1250,7 +1238,7 @@ html_template = '''<!DOCTYPE html>
                     demoVideo.currentTime = 0;
                     document.getElementById('proceedButton').style.display = 'none';
                     
-                    showNotification('Training stopped! 🛑');
+                    showNotification('Training stopped!');
                 }
             } else {
                 showNotification(data.message, 'error');
@@ -1263,12 +1251,12 @@ html_template = '''<!DOCTYPE html>
                 updateInstantFeedback(data);
                 
                 if (data.training_complete) {
-                    showNotification('🏆 Training Complete! All signs mastered!', 'success');
+                    showNotification('Training Complete! All signs mastered!', 'success');
                     setTimeout(() => {
                         stopTraining();
                     }, 3000);
                 } else if (data.sign_completed) {
-                    showNotification('✅ Sign completed! Moving to next...', 'success');
+                    showNotification('Sign completed! Moving to next...', 'success');
                 }
             }
         });
@@ -1482,14 +1470,6 @@ html_template = '''<!DOCTYPE html>
             socket.emit('stop_training');
         }
         
-        function nextSign() {
-            socket.emit('next_sign');
-        }
-        
-        function previousSign() {
-            socket.emit('previous_sign');
-        }
-        
         function resetProgress() {
             if (confirm('Are you sure you want to reset all progress?')) {
                 socket.emit('reset_progress');
@@ -1509,13 +1489,5 @@ if __name__ == "__main__":
         os.makedirs("handsign")
         print("📁 Created 'handsign' folder. Please add your hand sign images here.")
     
-    print("🌐 Starting Flask server with WebSocket support...")
-    print("🔗 Open your browser and go to: http://localhost:5000")
-    print("📁 Make sure your hand sign images are in the 'handsign' folder")
-    print("⚡ WebSocket enabled for real-time frame processing!")
-    
-    # Install required packages
-    print("\n📦 Make sure you have installed the required packages:")
-    print("pip install flask flask-socketio opencv-python mediapipe numpy pillow")
     
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
