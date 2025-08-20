@@ -524,7 +524,6 @@ class JujutsuHandSignTrainer:
 
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key'
 # socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 socketio = SocketIO(
     app, 
@@ -533,8 +532,8 @@ socketio = SocketIO(
     transport=['websocket', 'polling'],  # Allow fallback to polling
     ping_timeout=60,
     ping_interval=25,
-    logger=True,
-    engineio_logger=True
+    logger=False,
+    engineio_logger=False
 )
 
 # Initialize trainer (you can change the path here)
@@ -576,6 +575,7 @@ def handle_stop_training():
     trainer.training_active = False
     emit('training_response', {'success': True, 'message': 'Training stopped!'})
 
+
 @socketio.on('process_frame')
 def handle_process_frame(data):
     """Process frame via WebSocket"""
@@ -596,6 +596,16 @@ def handle_process_frame(data):
             emit('frame_result', {'success': False, 'message': 'No frame data or training not active'})
     except Exception as e:
         emit('frame_result', {'success': False, 'message': str(e)})
+
+@socketio.on('training_complete')
+def handle_training_complete():
+    """Handle training completion"""
+    emit('training_complete_response', {
+        'success': True,
+        'message': 'Training completed successfully!',
+        'total_signs': len(trainer.sign_list),
+        'completion_time': time.time()
+    })
 
 @socketio.on('get_status')
 def handle_get_status():
@@ -953,6 +963,36 @@ html_template = '''<!DOCTYPE html>
         .connection-status.disconnected {
             background: rgba(244, 67, 54, 0.8);
         }
+
+        .completion-screen {
+            text-align: center;
+            padding: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            margin: 20px;
+            animation: slideInFromBottom 0.8s ease-out;
+        }
+
+        .completion-screen h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        .celebration-emoji {
+            font-size: 4em;
+            margin: 20px 0;
+        }
+
+        .btn-restart {
+            background: linear-gradient(45deg, #4ecdc4 0%, #44a08d 100%);
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
         
         /* Demo Video Styles */
         .demo-video-screen {
@@ -1166,6 +1206,20 @@ html_template = '''<!DOCTYPE html>
                 </div>
             </div>
         </div>
+        <!-- Completion Screen -->
+        <div id="completionScreen" class="completion-screen" style="display: none;">
+            <div class="celebration-emoji">🏆</div>
+            <h2>Congratulations!</h2>
+            <div class="completion-message">
+                You have successfully mastered all the Jujutsu hand signs!
+            </div>
+            
+            <div class="completion-actions">
+                <button class="btn-restart" onclick="restartTraining()">
+                    🔄 Train Again
+                </button>
+            </div>
+        </div>
     </div>
     
     <div id="notification" class="notification"></div>
@@ -1271,9 +1325,8 @@ html_template = '''<!DOCTYPE html>
                 
                 if (data.training_complete) {
                     showNotification('Training Complete! All signs mastered!', 'success');
-                    setTimeout(() => {
-                        stopTraining();
-                    }, 3000);
+                    showCompletionScreen();
+
                 } else if (data.sign_completed) {
                     showNotification('Sign completed! Moving to next...', 'success');
                 }
@@ -1300,6 +1353,13 @@ html_template = '''<!DOCTYPE html>
             // Update accuracy colors
             const accuracyElement = document.getElementById('accuracyDisplay');
             const topAccuracyElement = document.getElementById('topSignAccuracy');
+
+            if (data.training_complete && isTrainingActive) {
+                setTimeout(() => {
+                    showCompletionScreen();
+                }, 1000);
+            }
+
             
             let color;
             if (data.accuracy >= 65) {
@@ -1382,6 +1442,45 @@ html_template = '''<!DOCTYPE html>
             
             showNotification('Watching training demo... ⏯️');
         }
+
+        function showCompletionScreen() {
+            // Stop training but don't go to home
+            isTrainingActive = false;
+            
+            // Stop camera and intervals
+            if (videoElement && videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            
+            if (frameProcessingInterval) {
+                clearInterval(frameProcessingInterval);
+                frameProcessingInterval = null;
+            }
+            
+            // Hide training interface and show completion screen
+            document.getElementById('trainingInterface').style.display = 'none';
+            document.getElementById('topProgressBar').style.display = 'none';
+            document.getElementById('topSignPreview').style.display = 'none';
+            document.getElementById('completionScreen').style.display = 'block';
+            
+            showNotification('🎉 All hand signs completed! 🥷', 'success');
+        }
+
+        function restartTraining() {
+            // Hide completion screen
+            document.getElementById('completionScreen').style.display = 'none';
+            
+            // Reset progress on server
+            socket.emit('reset_progress');
+            
+            // Start training again
+            setTimeout(() => {
+                startTraining();
+            }, 1000);
+        }
+
         
         function skipDemo() {
             showNotification('Demo skipped! Starting training... ⏭️');
