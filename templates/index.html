@@ -510,7 +510,16 @@
     
     <script>
         // Initialize Socket.IO connection
-        const socket = io();
+        // const socket = io();
+        const socket = io({
+            transports: ['websocket', 'polling'], // Allow fallback
+            timeout: 20000,
+            forceNew: true,
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5,
+            maxReconnectionAttempts: 10
+        });
         
         let videoElement = null;
         let canvas = null;

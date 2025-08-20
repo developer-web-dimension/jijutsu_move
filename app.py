@@ -57,11 +57,9 @@ class JujutsuHandSignTrainer:
         self.current_accuracy = 0
         self.current_status = "Position your hand"
         
-        print(f"🎯 Initializing Jujutsu Hand Sign Trainer from: {images_folder_path}")
     
     def process_image_library(self):
         """Process all images in the folder to create ordered training sequence"""
-        print("📚 Processing jujutsu hand sign library...")
         
         # Supported image formats
         image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
@@ -81,14 +79,12 @@ class JujutsuHandSignTrainer:
         
         processed_count = 0
         for i, image_path in enumerate(image_files):
-            print(f"📋 Processing {i+1}/{len(image_files)}: {os.path.basename(image_path)}")
             
             if self.process_single_image(image_path):
                 processed_count += 1
                 self.sign_list.append(os.path.splitext(os.path.basename(image_path))[0])
         
-        print(f"✅ Training sequence created! Processed {processed_count}/{len(image_files)} images")
-        print(f"📖 Training contains {len(self.hand_sign_library)} hand signs")
+
         
         return len(self.hand_sign_library) > 0
     
@@ -137,7 +133,6 @@ class JujutsuHandSignTrainer:
                     'display_image': display_image  # Store resized image for display
                 }
                 
-                print(f"   ✅ Extracted {len(hands_data)} hand(s) from {sign_name}")
                 return True
             
             else:
@@ -530,7 +525,17 @@ class JujutsuHandSignTrainer:
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*",
+    async_mode='threading',  # or 'eventlet' for production
+    transport=['websocket', 'polling'],  # Allow fallback to polling
+    ping_timeout=60,
+    ping_interval=25,
+    logger=True,
+    engineio_logger=True
+)
 
 # Initialize trainer (you can change the path here)
 trainer = JujutsuHandSignTrainer("handsign")
@@ -538,6 +543,11 @@ trainer = JujutsuHandSignTrainer("handsign")
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@socketio.on_error_default
+def default_error_handler(e):
+    print(f"SocketIO Error: {e}")
+    return {'error': str(e)}
 
 # WebSocket events
 @socketio.on('connect')
@@ -1162,7 +1172,16 @@ html_template = '''<!DOCTYPE html>
     
     <script>
         // Initialize Socket.IO connection
-        const socket = io();
+        // const socket = io();
+        const socket = io({
+            transports: ['websocket', 'polling'], // Allow fallback
+            timeout: 20000,
+            forceNew: true,
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5,
+            maxReconnectionAttempts: 10
+        });
         
         let videoElement = null;
         let canvas = null;
