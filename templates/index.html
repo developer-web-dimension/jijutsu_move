@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Jujutsu Trainer">
+    <meta name="format-detection" content="telephone=no">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jujutsu Hand Sign Trainer</title>
@@ -463,7 +466,7 @@
                 <p>Watch this quick demo to learn how to use the hand sign trainer</p>
                 
                 <div class="video-wrapper">
-                    <video id="demoVideo" controls autoplay muted>
+                    <video id="demoVideo" autoplay muted  playsinline webkit-playsinline>
                         <source src="/static/vikas.mp4" type="video/mp4">
                         <p>Your browser doesn't support video playback. <button class="btn btn-primary" onclick="skipDemo()">Skip to Training</button></p>
                     </video>
@@ -481,7 +484,7 @@
         
         <div id="trainingInterface" class="main-content" style="display: none;">
             <div class="video-section">
-                <video id="videoElement" autoplay muted></video>
+                <video id="videoElement" autoplay muted playsinline webkit-playsinline x-webkit-airplay="deny" ></video>
                 <canvas id="canvas"></canvas>
                 <div id="cameraError" style="display: none; text-align: center; padding: 50px; background: rgba(255,0,0,0.2); border-radius: 10px; margin-bottom: 20px;">
                     <h3> Camera Error</h3>
@@ -557,12 +560,14 @@
         // const socket = io();
         const socket = io({
             transports: ['websocket', 'polling'], // Allow fallback
-            timeout: 20000,
+            timeout: 30000, // Increased timeout for iOS
             forceNew: true,
             reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionAttempts: 5,
-            maxReconnectionAttempts: 10
+            reconnectionDelay: 2000, // Longer delay for iOS
+            reconnectionAttempts: 10,
+            maxReconnectionAttempts: 15,
+            upgrade: true,
+            rememberUpgrade: false
         });
         
         let videoElement = null;
@@ -606,7 +611,10 @@
                     }, 500);
                     
                     // Start frame processing
-                    frameProcessingInterval = setInterval(captureAndSendFrame, 100); // 10 FPS
+                    // frameProcessingInterval = setInterval(captureAndSendFrame, 100); // 10 FPS
+                    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                    const frameRate = isIOS ? 200 : 100; // 5 FPS for iOS, 10 FPS for others
+                    frameProcessingInterval = setInterval(captureAndSendFrame, frameRate);
                     
                     showNotification('Training started!');
                 } else if (data.message.includes('stopped')) {
@@ -834,17 +842,42 @@
                 canvas = document.getElementById('canvas');
                 ctx = canvas.getContext('2d');
                 
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480 }
-                });
+                // iOS-compatible video constraints
+                const constraints = {
+                    video: {
+                        width: { ideal: 640, max: 1280 },
+                        height: { ideal: 480, max: 720 },
+                        facingMode: 'user', // Front camera
+                        frameRate: { ideal: 30, max: 30 }
+                    },
+                    audio: false
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 
                 videoElement.srcObject = stream;
+                
+                // iOS requires explicit play() call and user interaction
+                videoElement.muted = true;
+                videoElement.playsInline = true; // Critical for iOS
+                videoElement.autoplay = true;
+                
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => {
+                        resolve();
+                    };
+                });
+                
+                // Explicitly play for iOS
+                await videoElement.play();
+                
                 videoElement.style.display = 'block';
                 document.getElementById('cameraError').style.display = 'none';
                 
-                // Set canvas size
-                canvas.width = 640;
-                canvas.height = 480;
+                // Set canvas size based on actual video dimensions
+                canvas.width = videoElement.videoWidth || 640;
+                canvas.height = videoElement.videoHeight || 480;
                 
                 showNotification('Camera connected successfully! 📷');
                 return true;
@@ -860,11 +893,28 @@
             if (!videoElement || !canvas || !ctx || !isTrainingActive) return;
             
             try {
+                // Check if video is actually playing
+                if (videoElement.readyState < 2) return;
+                
+                const videoWidth = videoElement.videoWidth;
+                const videoHeight = videoElement.videoHeight;
+                
+                if (videoWidth === 0 || videoHeight === 0) return;
+                
+                // Update canvas size if needed
+                if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
+                    canvas.width = videoWidth;
+                    canvas.height = videoHeight;
+                }
+                
+                // Clear canvas first (iOS optimization)
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
                 // Draw video frame to canvas
                 ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
                 
-                // Convert to base64
-                const frameData = canvas.toDataURL('image/jpeg', 0.6);
+                // Convert to base64 with lower quality for iOS performance
+                const frameData = canvas.toDataURL('image/jpeg', 0.4);
                 
                 // Send to backend via WebSocket
                 socket.emit('process_frame', { frame: frameData });
