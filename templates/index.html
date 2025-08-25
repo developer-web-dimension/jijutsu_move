@@ -327,6 +327,7 @@
             border: none;
             border-radius: 10px;
             cursor: pointer;
+            margin-top: 20px;
         }
         
         /* Demo Video Styles */
@@ -1234,6 +1235,62 @@
             showNotification(data.message);
             socket.emit('get_current_sign_image');
         });
+
+        socket.on('training_results_update', function(data) {
+            displayTrainingResults(data);
+        });
+
+        // Add this new function
+        function displayTrainingResults(data) {
+            // Hide other screens and show results
+            document.getElementById('completionScreen').style.display = 'none';
+            document.getElementById('resultsScreen').style.display = 'block';
+            
+            // Update average score
+            document.getElementById('averageScore').textContent = `${data.average_accuracy.toFixed(1)}%`;
+            
+            // Update lowest sign info
+            if (data.lowest_sign.name) {
+                document.getElementById('lowestSignName').textContent = data.lowest_sign.name;
+                document.getElementById('lowestSignScore').textContent = `${data.lowest_sign.accuracy.toFixed(1)}%`;
+            }
+            
+            // Populate scores grid
+            const scoresGrid = document.getElementById('scoresGrid');
+            scoresGrid.innerHTML = ''; // Clear existing content
+            
+            data.results.forEach((result, index) => {
+                const scoreItem = document.createElement('div');
+                scoreItem.className = 'score-item';
+                
+                // Highlight the lowest scoring sign
+                if (result.sign_name === data.lowest_sign.name) {
+                    scoreItem.classList.add('lowest');
+                }
+                
+                scoreItem.innerHTML = `
+                    <div class="score-sign-name">${result.sign_name}</div>
+                    <div class="score-percentage" style="color: ${getAccuracyColor(result.max_accuracy)}">${result.max_accuracy.toFixed(1)}%</div>
+                `;
+                
+                scoresGrid.appendChild(scoreItem);
+            });
+        }
+
+        // Add helper function for color coding
+        function getAccuracyColor(accuracy) {
+            if (accuracy >= 65) return '#4ecdc4';
+            if (accuracy >= 45) return '#ffa726';
+            return '#ff6b6b';
+        }
+
+        // Add goHome function
+        function goHome() {
+            // Hide results screen and show startup screen
+            document.getElementById('resultsScreen').style.display = 'none';
+            document.getElementById('startupScreen').style.display = 'block';
+        }
+
         
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
@@ -1319,7 +1376,6 @@
             showNotification('Watching training demo... ⏯️');
         }
 
-        // REPLACE the existing showCompletionScreen function
         function showCompletionScreen() {
             // Stop training but don't go to home
             isTrainingActive = false;
@@ -1343,18 +1399,24 @@
                 frameProcessingInterval = null;
             }
             
-            // Hide training interface and show completion screen
+            // Hide training interface and show completion screen briefly
             document.getElementById('trainingInterface').style.display = 'none';
             document.getElementById('topProgressBar').style.display = 'none';
             document.getElementById('topSignPreview').style.display = 'none';
             document.getElementById('completionScreen').style.display = 'block';
             
             showNotification('🎉 All hand signs completed! 🥷', 'success');
+            
+            // Auto-show results after 2 seconds
+            setTimeout(() => {
+                socket.emit('get_training_results');
+            }, 2000);
         }
 
         function restartTraining() {
             // Hide completion screen
             document.getElementById('completionScreen').style.display = 'none';
+            document.getElementById('resultsScreen').style.display = 'none';
             
             // Reset progress on server
             socket.emit('reset_progress');

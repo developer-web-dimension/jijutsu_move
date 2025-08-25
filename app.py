@@ -43,6 +43,14 @@ class JujutsuHandSignTrainer:
         self.detection_threshold = 0.65  # Lower threshold for easier progression
         self.stable_detections = 0
         self.required_stable_detections = 5 
+
+        self.training_active = False
+        self.current_accuracy = 0
+        self.current_status = "Position your hand"
+
+        # ADD THESE NEW LINES:
+        self.sign_max_accuracies = {}  # Track max accuracy for each sign
+        self.current_sign_start_time = None  # Track when current sign started
         
         # Feature weights for accuracy
         self.weights = {
@@ -413,15 +421,30 @@ class JujutsuHandSignTrainer:
         return (orientation_sim + area_ratio + compactness_sim) / 3
     
     def advance_to_next_sign(self):
-        """Advance to the next sign in sequence"""
+        """Advance to the next sign in sequence - auto-advance version"""
         current_sign = self.get_current_sign()
         if current_sign:
             self.hand_sign_library[current_sign]['completed'] = True
-            print(f"🎉 COMPLETED: {current_sign}")
+            
+            # Store the max accuracy achieved for this sign
+            if current_sign in self.sign_max_accuracies:
+                max_accuracy = self.sign_max_accuracies[current_sign]
+                print(f"🎉 COMPLETED: {current_sign} (Best: {max_accuracy:.1f}%)")
+            else:
+                print(f"🎉 COMPLETED: {current_sign}")
         
         self.current_sign_index += 1
         self.stable_detections = 0
         self.similarity_buffer.clear()
+        
+        # Reset tracking for next sign
+        if self.current_sign_index < len(self.sign_list):
+            next_sign = self.get_current_sign()
+            if next_sign:
+                # Initialize max accuracy tracking for new sign
+                if next_sign not in self.sign_max_accuracies:
+                    self.sign_max_accuracies[next_sign] = 0.0
+                self.current_sign_start_time = time.time()
         
         if self.current_sign_index >= len(self.sign_list):
             print("🏆 CONGRATULATIONS! All hand signs completed!")
@@ -430,7 +453,8 @@ class JujutsuHandSignTrainer:
             next_sign = self.get_current_sign()
             print(f"🎯 Next sign: {next_sign}")
             return False
-    
+
+
     # REPLACE the existing process_frame_from_websocket method with this simplified version:
     def process_frame_from_websocket(self, frame_data):
         """Process frame sent from WebSocket - simplified for auto-advance"""
@@ -479,6 +503,13 @@ class JujutsuHandSignTrainer:
                         self.similarity_buffer.append(best_similarity)
                         smoothed_similarity = np.mean(list(self.similarity_buffer))
                         self.current_accuracy = smoothed_similarity * 100
+                        
+                        # UPDATE MAX ACCURACY TRACKING FOR CURRENT SIGN
+                        if current_sign not in self.sign_max_accuracies:
+                            self.sign_max_accuracies[current_sign] = 0.0
+                        
+                        if self.current_accuracy > self.sign_max_accuracies[current_sign]:
+                            self.sign_max_accuracies[current_sign] = self.current_accuracy
                         
                         # Status based on similarity (for feedback only)
                         if smoothed_similarity >= 0.65:
@@ -567,6 +598,41 @@ def handle_auto_advance_sign():
         'training_complete': is_complete,
         'next_sign': next_sign,
         'message': 'Auto-advanced to next sign!'
+    })
+
+# Add this new WebSocket event handler after the existing ones
+@socketio.on('get_training_results')
+def handle_get_training_results():
+    """Get training results with max accuracies for each sign"""
+    results = []
+    total_accuracy = 0
+    lowest_accuracy = float('inf')
+    lowest_sign = None
+    
+    for sign_name in trainer.sign_list:
+        if sign_name in trainer.sign_max_accuracies:
+            accuracy = trainer.sign_max_accuracies[sign_name]
+            results.append({
+                'sign_name': sign_name,
+                'max_accuracy': accuracy
+            })
+            total_accuracy += accuracy
+            
+            if accuracy < lowest_accuracy:
+                lowest_accuracy = accuracy
+                lowest_sign = sign_name
+    
+    # Calculate average
+    average_accuracy = total_accuracy / len(results) if results else 0
+    
+    emit('training_results_update', {
+        'results': results,
+        'average_accuracy': average_accuracy,
+        'lowest_sign': {
+            'name': lowest_sign,
+            'accuracy': lowest_accuracy if lowest_sign else 0
+        },
+        'total_signs': len(trainer.sign_list)
     })
 
 
@@ -675,6 +741,11 @@ def handle_reset_progress():
     trainer.current_sign_index = 0
     trainer.stable_detections = 0
     trainer.similarity_buffer.clear()
+    
+    # RESET MAX ACCURACY TRACKING
+    trainer.sign_max_accuracies.clear()
+    trainer.current_sign_start_time = None
+    
     for sign_name in trainer.sign_list:
         if sign_name in trainer.hand_sign_library:
             trainer.hand_sign_library[sign_name]['completed'] = False
@@ -1015,6 +1086,7 @@ html_template = '''<!DOCTYPE html>
             border: none;
             border-radius: 10px;
             cursor: pointer;
+            margin-top: 20px;
         }
         
         /* Demo Video Styles */
@@ -1922,6 +1994,62 @@ html_template = '''<!DOCTYPE html>
             showNotification(data.message);
             socket.emit('get_current_sign_image');
         });
+
+        socket.on('training_results_update', function(data) {
+            displayTrainingResults(data);
+        });
+
+        // Add this new function
+        function displayTrainingResults(data) {
+            // Hide other screens and show results
+            document.getElementById('completionScreen').style.display = 'none';
+            document.getElementById('resultsScreen').style.display = 'block';
+            
+            // Update average score
+            document.getElementById('averageScore').textContent = `${data.average_accuracy.toFixed(1)}%`;
+            
+            // Update lowest sign info
+            if (data.lowest_sign.name) {
+                document.getElementById('lowestSignName').textContent = data.lowest_sign.name;
+                document.getElementById('lowestSignScore').textContent = `${data.lowest_sign.accuracy.toFixed(1)}%`;
+            }
+            
+            // Populate scores grid
+            const scoresGrid = document.getElementById('scoresGrid');
+            scoresGrid.innerHTML = ''; // Clear existing content
+            
+            data.results.forEach((result, index) => {
+                const scoreItem = document.createElement('div');
+                scoreItem.className = 'score-item';
+                
+                // Highlight the lowest scoring sign
+                if (result.sign_name === data.lowest_sign.name) {
+                    scoreItem.classList.add('lowest');
+                }
+                
+                scoreItem.innerHTML = `
+                    <div class="score-sign-name">${result.sign_name}</div>
+                    <div class="score-percentage" style="color: ${getAccuracyColor(result.max_accuracy)}">${result.max_accuracy.toFixed(1)}%</div>
+                `;
+                
+                scoresGrid.appendChild(scoreItem);
+            });
+        }
+
+        // Add helper function for color coding
+        function getAccuracyColor(accuracy) {
+            if (accuracy >= 65) return '#4ecdc4';
+            if (accuracy >= 45) return '#ffa726';
+            return '#ff6b6b';
+        }
+
+        // Add goHome function
+        function goHome() {
+            // Hide results screen and show startup screen
+            document.getElementById('resultsScreen').style.display = 'none';
+            document.getElementById('startupScreen').style.display = 'block';
+        }
+
         
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
@@ -2007,7 +2135,6 @@ html_template = '''<!DOCTYPE html>
             showNotification('Watching training demo... ⏯️');
         }
 
-        // REPLACE the existing showCompletionScreen function
         function showCompletionScreen() {
             // Stop training but don't go to home
             isTrainingActive = false;
@@ -2031,18 +2158,24 @@ html_template = '''<!DOCTYPE html>
                 frameProcessingInterval = null;
             }
             
-            // Hide training interface and show completion screen
+            // Hide training interface and show completion screen briefly
             document.getElementById('trainingInterface').style.display = 'none';
             document.getElementById('topProgressBar').style.display = 'none';
             document.getElementById('topSignPreview').style.display = 'none';
             document.getElementById('completionScreen').style.display = 'block';
             
             showNotification('🎉 All hand signs completed! 🥷', 'success');
+            
+            // Auto-show results after 2 seconds
+            setTimeout(() => {
+                socket.emit('get_training_results');
+            }, 2000);
         }
 
         function restartTraining() {
             // Hide completion screen
             document.getElementById('completionScreen').style.display = 'none';
+            document.getElementById('resultsScreen').style.display = 'none';
             
             // Reset progress on server
             socket.emit('reset_progress');
