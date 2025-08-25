@@ -40,16 +40,16 @@ class JujutsuHandSignTrainer:
         # Training state
         self.current_sign_index = 0
         self.sign_list = []
-        self.detection_threshold = 0.70  # Lower threshold for easier progression
+        self.detection_threshold = 0.65  # Lower threshold for easier progression
         self.stable_detections = 0
         self.required_stable_detections = 5 
         
         # Feature weights for accuracy
         self.weights = {
-            'landmarks': 0.4,
+            'landmarks': 0.2,
             'finger_positions': 0.3,
             'hand_geometry': 0.2,
-            'finger_angles': 0.1
+            'finger_angles': 0.3
         }
         
         # Flask-specific variables
@@ -61,7 +61,7 @@ class JujutsuHandSignTrainer:
     def process_image_library(self):
         """Process all images in the folder to create ordered training sequence"""
         
-        # Supported image formats
+        # Supported image format
         image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']
         image_files = []
         
@@ -418,7 +418,7 @@ class JujutsuHandSignTrainer:
             return False
     
     def process_frame_from_websocket(self, frame_data):
-        """Process frame sent from WebSocket"""
+        """Process frame sent from WebSocket with two-hand validation"""
         try:
             # Decode base64 image
             import io
@@ -442,48 +442,77 @@ class JujutsuHandSignTrainer:
             current_sign = self.get_current_sign()
             hand_detected = False
             
+            # Count detected hands
+            num_hands = len(results.multi_hand_landmarks) if results.multi_hand_landmarks else 0
+            
             if results.multi_hand_landmarks and results.multi_handedness:
+                # Check if we have the required number of hands
+                if num_hands < 2:
+                    hand_detected = True
+                    self.current_status = f"Show BOTH hands ({num_hands}/2 detected)"
+                    
+                    # Force low similarity for single hand
+                    low_similarity = 0.15  # 15% similarity for single hand
+                    self.similarity_buffer.append(low_similarity)
+                    smoothed_similarity = np.mean(list(self.similarity_buffer))
+                    self.current_accuracy = min(smoothed_similarity * 100, 25)  # Cap at 25%
+                    
+                    # Reset stable detections since we don't have both hands
+                    self.stable_detections = 0
+                    
+                    return {
+                        'training_complete': False,
+                        'accuracy': self.current_accuracy,
+                        'status': self.current_status,
+                        'hand_detected': hand_detected,
+                        'sign_completed': False
+                    }
+                
+                # Process hands normally when we have both hands
+                best_similarity = 0
                 for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
                     hand_detected = True
                     if current_sign:
                         # Check match with current target sign
                         similarity, _ = self.check_sign_match(hand_landmarks, handedness)
-                        
-                        # Store similarity for smoothing
-                        self.similarity_buffer.append(similarity)
-                        smoothed_similarity = np.mean(list(self.similarity_buffer))
-                        self.current_accuracy = smoothed_similarity * 100
-                        
-                        # Check if detection is stable and accurate
-                        if smoothed_similarity >= self.detection_threshold:
-                            self.stable_detections += 1
-                        else:
-                            self.stable_detections = max(0, self.stable_detections - 2)
-                        
-                        # Status based on similarity
-                        if smoothed_similarity >= 0.65:
-                            self.current_status = "GREAT! ADVANCING..."
-                        elif smoothed_similarity >= 0.55:
-                            self.current_status = "ALMOST THERE!"
-                        elif smoothed_similarity >= 0.45:
-                            self.current_status = "GETTING CLOSER!"
-                        elif smoothed_similarity >= 0.35:
-                            self.current_status = "KEEP TRYING"
-                        else:
-                            self.current_status = "TRY AGAIN"
-                        
-                        # Check if ready to advance (65% threshold)
-                        if self.stable_detections >= self.required_stable_detections:
-                            return {
-                                'training_complete': self.advance_to_next_sign(),
-                                'accuracy': self.current_accuracy,
-                                'status': self.current_status,
-                                'hand_detected': True,
-                                'sign_completed': True
-                            }
+                        best_similarity = max(best_similarity, similarity)
+                
+                if current_sign and hand_detected:
+                    # Store similarity for smoothing
+                    self.similarity_buffer.append(best_similarity)
+                    smoothed_similarity = np.mean(list(self.similarity_buffer))
+                    self.current_accuracy = smoothed_similarity * 100
+                    
+                    # Check if detection is stable and accurate
+                    if smoothed_similarity >= self.detection_threshold and num_hands >= 2:
+                        self.stable_detections += 1
+                    else:
+                        self.stable_detections = max(0, self.stable_detections - 2)
+                    
+                    # Status based on similarity (only when we have both hands)
+                    if smoothed_similarity >= 0.65:
+                        self.current_status = "GREAT! ADVANCING..."
+                    elif smoothed_similarity >= 0.55:
+                        self.current_status = "ALMOST THERE!"
+                    elif smoothed_similarity >= 0.45:
+                        self.current_status = "GETTING CLOSER!"
+                    elif smoothed_similarity >= 0.35:
+                        self.current_status = "KEEP TRYING"
+                    else:
+                        self.current_status = "TRY AGAIN"
+                    
+                    # Check if ready to advance (requires both hands + threshold)
+                    if self.stable_detections >= self.required_stable_detections:
+                        return {
+                            'training_complete': self.advance_to_next_sign(),
+                            'accuracy': self.current_accuracy,
+                            'status': self.current_status,
+                            'hand_detected': True,
+                            'sign_completed': True
+                        }
             
             if not hand_detected:
-                self.current_status = f'Show hand sign: {current_sign if current_sign else "COMPLETE"}'
+                self.current_status = f'Show BOTH hands for sign: {current_sign if current_sign else "COMPLETE"}'
                 self.current_accuracy = 0
             
             return {
@@ -763,16 +792,15 @@ html_template = '''<!DOCTYPE html>
         
         .main-content {
             display: grid;
-            grid-template-columns: 1fr 400px;
+            grid-template-columns: 400px;
             gap: 20px;
             align-items: start;
+            justify-content: end;
+            padding-right: 20px;
         }
         
         .video-section {
-            background: rgba(255,255,255,0.1);
-            border-radius: 15px;
-            padding: 20px;
-            backdrop-filter: blur(10px);
+            display:none;
         }
         
         .side-panel {
@@ -783,10 +811,15 @@ html_template = '''<!DOCTYPE html>
         }
         
         #videoElement {
-            width: 100%;
-            border-radius: 10px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: -1;
+            transform: scaleX(-1); /* Mirror the video for selfie mode */
+            display: block; /* ADD THIS LINE */
         }
         
         #canvas {
@@ -1069,8 +1102,374 @@ html_template = '''<!DOCTYPE html>
             margin-bottom: 5px;
             opacity: 0.9;
         }
+
+        .timer-display {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            font-size: 4em;
+            font-weight: bold;
+            padding: 30px 50px;
+            border-radius: 20px;
+            border: 3px solid #4ecdc4;
+            z-index: 1001;
+            backdrop-filter: blur(15px);
+            text-align: center;
+            min-width: 200px;
+        }
+
+        .timer-display.warning {
+            border-color: #ffa726;
+            color: #ffa726;
+        }
+
+        .timer-display.critical {
+            border-color: #ff6b6b;
+            color: #ff6b6b;
+            animation: pulse 0.5s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { transform: translate(-50%, -50%) scale(1); }
+            to { transform: translate(-50%, -50%) scale(1.05); }
+        }
+
+        /* Results Summary Styles */
+        .results-screen {
+            text-align: center;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            margin: 20px;
+            color: white;
+        }
+
+        .results-screen h2 {
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            color: #fff;
+        }
+
+        .scores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 30px 0;
+        }
+
+        .score-item {
+            background: rgba(255,255,255,0.2);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .score-item.lowest {
+            background: rgba(255, 107, 107, 0.3);
+            border: 2px solid #ff6b6b;
+        }
+
+        .score-sign-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .score-percentage {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .summary-stats {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 15px;
+            margin: 20px 0;
+        }
+
+        .auto-mode-btn {
+            background: linear-gradient(45deg, #4ecdc4 0%, #44a08d 100%);
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px;
+            font-weight: bold;
+        }
+
+        .auto-mode-btn:hover {
+            transform: translateY(-2px);
+        }
+
         
+
+        /* HUD Overlay Styles */
+        .hud-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 10;
+            display: none;
+        }
+
+        .hud-overlay.active {
+            display: block;
+        }
+
+        /* Top HUD Bar */
+        .hud-top-bar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 25px;
+            padding: 8px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 0.9em;
+        }
+
+        .hud-progress-indicator {
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+
+        .hud-sign-name {
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Center Target Sign Display */
+        .hud-target-sign {
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(15px);
+            border-radius: 15px;
+            padding: 15px;
+            max-width: 200px;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .hud-target-sign img {
+            width: 100%;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .hud-target-title {
+            color: #4ecdc4;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+
+        .hud-target-name {
+            color: white;
+            font-size: 1.1em;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        /* Main Status HUD (Bottom Right) */
+        .hud-status-panel {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(15px);
+            border-radius: 20px;
+            padding: 20px;
+            min-width: 250px;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .hud-accuracy-display {
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 10px;
+            color: #ff6b6b;
+        }
+
+        .hud-status-text {
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 15px;
+            padding: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+        }
+
+        .hud-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .hud-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #4ecdc4, #45b7d1);
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        /* Stats Grid (Bottom Left) */
+        .hud-stats-grid {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(15px);
+            border-radius: 15px;
+            padding: 15px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            min-width: 280px;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .hud-stat-item {
+            background: rgba(255,255,255,0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .hud-stat-label {
+            font-size: 0.8em;
+            color: #4ecdc4;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .hud-stat-value {
+            font-size: 0.9em;
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Controls HUD (Top Right) */
+        .hud-controls {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+        }
+
+        .hud-btn {
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(15px);
+            border: 2px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+
+        .hud-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-2px);
+        }
+
+        .hud-btn.danger {
+            border-color: #ff6b6b;
+            color: #ff6b6b;
+        }
+
+        .hud-btn.secondary {
+            border-color: #4ecdc4;
+            color: #4ecdc4;
+        }
+
+
         @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                justify-content: center;
+                padding: 10px;
+            }
+            
+            .side-panel {
+                max-width: 400px;
+                margin: 0 auto;
+            }
+            
+            .controls {
+                grid-template-columns: 1fr;
+            }
+
+
+
+            @media (max-width: 768px) {
+                .hud-target-sign {
+                    max-width: 150px;
+                    left: 15px;
+                    top: 15px;
+                    padding: 10px;
+                }
+                
+                .hud-status-panel {
+                    bottom: 15px;
+                    right: 15px;
+                    min-width: 200px;
+                    padding: 15px;
+                }
+                
+                .hud-accuracy-display {
+                    font-size: 2.5em;
+                }
+                
+                .hud-stats-grid {
+                    bottom: 15px;
+                    left: 15px;
+                    min-width: 240px;
+                    padding: 10px;
+                    gap: 8px;
+                }
+                
+                .hud-controls {
+                    top: 15px;
+                    right: 15px;
+                    flex-direction: column;
+                }
+                
+                .hud-top-bar {
+                    top: 10px;
+                    left: 15px;
+                    right: 15px;
+                    transform: none;
+                    width: calc(100% - 30px);
+                    justify-content: center;
+                }
+            }
+
+            
             .demo-video-screen {
                 padding: 4px;
             }
@@ -1120,14 +1519,13 @@ html_template = '''<!DOCTYPE html>
     
     <div class="container">
         <div class="header">
-            <h2>Jujutsu Hand Sign Trainer</h2>
         </div>
         
         <div id="startupScreen" class="startup-screen">
             <h2>Welcome to Jujutsu Hand Sign Training!</h2>
             <p>Master the ancient art of hand signs with AI-powered training</p>
             <button class="btn btn-primary" onclick="showDemoVideo()" style="font-size: 1.2em; padding: 15px 30px;">
-                🎯 Start Training
+                🎯 Manual Training
             </button>
         </div>
         
@@ -1155,26 +1553,9 @@ html_template = '''<!DOCTYPE html>
         </div>
         
         <div id="trainingInterface" class="main-content" style="display: none;">
-            <div class="video-section">
-                <video id="videoElement" autoplay muted playsinline webkit-playsinline x-webkit-airplay="deny" ></video>
-                <canvas id="canvas"></canvas>
-                <div id="cameraError" style="display: none; text-align: center; padding: 50px; background: rgba(255,0,0,0.2); border-radius: 10px; margin-bottom: 20px;">
-                    <h3> Camera Error</h3>
-                    <p>Unable to access camera. Please check:</p>
-                    <ul style="text-align: left; margin: 20px 0;">
-                        <li>Camera is connected and not used by other apps</li>
-                        <li>Browser has camera permissions</li>
-                        <li>Try refreshing the page</li>
-                    </ul>
-                    <button class="btn btn-secondary" onclick="initCamera()">Retry Camera</button>
-                </div>
-                <div class="controls">
-                    <button class="btn btn-danger" onclick="stopTraining()"> Stop</button>
-                    <button class="btn btn-secondary" onclick="resetProgress()"> Reset</button>
-                </div>
-            </div>
-            
-            <div class="side-panel">
+            <!-- Hide the old side panel -->
+            <div class="side-panel" style="display: none;">
+                <!-- Keep existing content for fallback -->
                 <div class="reference-image">
                     <h3>Target Sign</h3>
                     <div id="signName" style="font-size: 1.2em; margin-bottom: 10px;">Loading...</div>
@@ -1182,6 +1563,11 @@ html_template = '''<!DOCTYPE html>
                     <div id="noImageText" style="padding: 50px; background: rgba(255,255,255,0.1); border-radius: 10px;">
                         No reference image available
                     </div>
+                </div>
+
+                <div id="timerDisplay" class="timer-display" style="display: none;">
+                    <div id="timerNumber">5</div>
+                    <div style="font-size: 0.3em; margin-top: 10px;">seconds remaining</div>
                 </div>
                 
                 <div class="status-panel">
@@ -1207,8 +1593,88 @@ html_template = '''<!DOCTYPE html>
                         </div>
                     </div>
                 </div>
+                
+                <div class="controls">
+                    <button class="btn btn-danger" onclick="stopTraining()">🛑 Stop</button>
+                    <button class="btn btn-secondary" onclick="resetProgress()">🔄 Reset</button>
+                </div>
+            </div>
+            
+            <!-- Video elements -->
+            <video id="videoElement" autoplay muted playsinline webkit-playsinline x-webkit-airplay="deny"></video>
+            <canvas id="canvas"></canvas>
+            
+            <!-- NEW HUD OVERLAY -->
+            <div id="hudOverlay" class="hud-overlay">
+                <!-- Top Progress Bar -->
+                <div class="hud-top-bar">
+                    <div class="hud-progress-indicator">
+                        <span id="hudProgressText">0/0</span> Signs Completed
+                    </div>
+                    <div class="hud-sign-name">
+                        Current: <span id="hudCurrentSign">-</span>
+                    </div>
+                </div>
+                
+                <!-- Target Sign Display -->
+                <div class="hud-target-sign">
+                    <div class="hud-target-title">Target Sign</div>
+                    <img id="hudTargetImage" src="" alt="Target Sign" style="display: none;">
+                    <div id="hudNoImage" style="padding: 20px; text-align: center; color: #666;">
+                        No image available
+                    </div>
+                    <div class="hud-target-name" id="hudTargetName">Loading...</div>
+                </div>
+                
+                <!-- Main Status Panel -->
+                <div class="hud-status-panel">
+                    <div class="hud-accuracy-display" id="hudAccuracyDisplay">0%</div>
+                    <div class="hud-status-text" id="hudStatusText">Position your hands</div>
+                    <div class="hud-progress-bar">
+                        <div class="hud-progress-fill" id="hudProgressFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+                
+                <!-- Stats Grid -->
+                <div class="hud-stats-grid">
+                    <div class="hud-stat-item">
+                        <div class="hud-stat-label">CURRENT</div>
+                        <div class="hud-stat-value" id="hudStatCurrent">sign (1)</div>
+                    </div>
+                    <div class="hud-stat-item">
+                        <div class="hud-stat-label">PROGRESS</div>
+                        <div class="hud-stat-value" id="hudStatProgress">0/8</div>
+                    </div>
+                    <div class="hud-stat-item">
+                        <div class="hud-stat-label">STABILITY</div>
+                        <div class="hud-stat-value" id="hudStatStability">0/5</div>
+                    </div>
+                    <div class="hud-stat-item">
+                        <div class="hud-stat-label">STATUS</div>
+                        <div class="hud-stat-value" id="hudStatStatus">Ready</div>
+                    </div>
+                </div>
+                
+                <!-- Control Buttons -->
+                <div class="hud-controls">
+                    <button class="hud-btn danger" onclick="stopTraining()">🛑 Stop</button>
+                    <button class="hud-btn secondary" onclick="resetProgress()">🔄 Reset</button>
+                </div>
+            </div>
+            
+            <div id="cameraError" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; padding: 50px; background: rgba(255,0,0,0.8); border-radius: 10px; z-index: 1000;">
+                <h3>📷 Camera Error</h3>
+                <p>Unable to access camera. Please check:</p>
+                <ul style="text-align: left; margin: 20px 0;">
+                    <li>Camera is connected and not used by other apps</li>
+                    <li>Browser has camera permissions</li>
+                    <li>Try refreshing the page</li>
+                </ul>
+                <button class="btn btn-secondary" onclick="initCamera()">Retry Camera</button>
             </div>
         </div>
+
+
         <!-- Completion Screen -->
         <div id="completionScreen" class="completion-screen" style="display: none;">
             <div class="celebration-emoji">🏆</div>
@@ -1223,6 +1689,32 @@ html_template = '''<!DOCTYPE html>
                 </button>
             </div>
         </div>
+        <div id="resultsScreen" class="results-screen" style="display: none;">
+            <h2>📊 Training Results</h2>
+            
+            <div class="summary-stats">
+                <h3>Overall Performance</h3>
+                <div id="averageScore" style="font-size: 2em; font-weight: bold; color: #4ecdc4;">0%</div>
+                <p>Average Accuracy</p>
+            </div>
+            
+            <div class="scores-grid" id="scoresGrid">
+                <!-- Scores will be populated here -->
+            </div>
+            
+            <div id="lowestSignInfo" class="summary-stats" style="background: rgba(255, 107, 107, 0.2);">
+                <h3>🎯 Sign to Practice More</h3>
+                <div id="lowestSignName" style="font-size: 1.5em; font-weight: bold;">-</div>
+                <div id="lowestSignScore" style="font-size: 2em; font-weight: bold; color: #ff6b6b;">0%</div>
+                <p>Lowest scoring sign</p>
+            </div>
+            
+            <div style="margin-top: 30px;">
+                <button class="btn-restart" onclick="restartTraining()">🔄 Train Again</button>
+                <button class="btn-restart" onclick="goHome()" style="background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);">🏠 Home</button>
+            </div>
+        </div>
+
     </div>
     
     <div id="notification" class="notification"></div>
@@ -1247,7 +1739,9 @@ html_template = '''<!DOCTYPE html>
         let ctx = null;
         let frameProcessingInterval = null;
         let isTrainingActive = false;
-        
+        let timerInterval = null;
+        let isAutoMode = false;
+
         // Connection status handlers
         socket.on('connect', function() {
             console.log('Connected to server');
@@ -1512,6 +2006,11 @@ html_template = '''<!DOCTYPE html>
             try {
                 videoElement = document.getElementById('videoElement');
                 canvas = document.getElementById('canvas');
+                
+                if (!videoElement || !canvas) {
+                    throw new Error('Video or canvas element not found');
+                }
+                
                 ctx = canvas.getContext('2d');
                 
                 // iOS-compatible video constraints
@@ -1544,8 +2043,10 @@ html_template = '''<!DOCTYPE html>
                 // Explicitly play for iOS
                 await videoElement.play();
                 
-                videoElement.style.display = 'block';
-                document.getElementById('cameraError').style.display = 'none';
+                const cameraError = document.getElementById('cameraError');
+                if (cameraError) {
+                    cameraError.style.display = 'none';
+                }
                 
                 // Set canvas size based on actual video dimensions
                 canvas.width = videoElement.videoWidth || 640;
@@ -1555,7 +2056,10 @@ html_template = '''<!DOCTYPE html>
                 return true;
             } catch (error) {
                 console.error('Camera error:', error);
-                document.getElementById('cameraError').style.display = 'block';
+                const cameraError = document.getElementById('cameraError');
+                if (cameraError) {
+                    cameraError.style.display = 'block';
+                }
                 showNotification('Failed to access camera: ' + error.message, 'error');
                 return false;
             }
@@ -1598,26 +2102,33 @@ html_template = '''<!DOCTYPE html>
         function updateInstantFeedback(data) {
             // Update accuracy display immediately from frame processing
             const accuracyElement = document.getElementById('accuracyDisplay');
-            accuracyElement.textContent = `${data.accuracy.toFixed(1)}%`;
-            
-            // Update accuracy color
-            if (data.accuracy >= 65) {
-                accuracyElement.style.color = '#4ecdc4';
-            } else if (data.accuracy >= 45) {
-                accuracyElement.style.color = '#ffa726';
-            } else {
-                accuracyElement.style.color = '#ff6b6b';
+            if (accuracyElement) {
+                accuracyElement.textContent = `${data.accuracy.toFixed(1)}%`;
+                
+                // Update accuracy color
+                if (data.accuracy >= 65) {
+                    accuracyElement.style.color = '#4ecdc4';
+                } else if (data.accuracy >= 45) {
+                    accuracyElement.style.color = '#ffa726';
+                } else {
+                    accuracyElement.style.color = '#ff6b6b';
+                }
             }
             
             // Update status
-            document.getElementById('statusText').textContent = data.status;
+            const statusElement = document.getElementById('statusText');
+            if (statusElement) {
+                statusElement.textContent = data.status;
+            }
             
-            // Visual feedback for hand detection
+            // Visual feedback for hand detection - FIXED
             const videoElement = document.getElementById('videoElement');
-            if (data.hand_detected) {
-                videoElement.style.border = data.accuracy >= 65 ? '3px solid #4ecdc4' : '3px solid #ffa726';
-            } else {
-                videoElement.style.border = '3px solid #ff6b6b';
+            if (videoElement) {
+                if (data.hand_detected) {
+                    videoElement.style.border = data.accuracy >= 65 ? '3px solid #4ecdc4' : '3px solid #ffa726';
+                } else {
+                    videoElement.style.border = '3px solid #ff6b6b';
+                }
             }
         }
         
