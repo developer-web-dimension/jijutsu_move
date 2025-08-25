@@ -54,7 +54,7 @@ class JujutsuHandSignTrainer:
         
         # Feature weights for accuracy
         self.weights = {
-            'landmarks': 0.2,
+            'landmarks': 0.1,
             'finger_positions': 0.3,
             'hand_geometry': 0.2,
             'finger_angles': 0.3
@@ -1769,7 +1769,6 @@ html_template = '''<!DOCTYPE html>
             </div>
             
             <div style="margin-top: 30px;">
-                <button class="btn-restart" onclick="restartTraining()">🔄 Train Again</button>
                 <button class="btn-restart" onclick="goHome()" style="background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);">🏠 Home</button>
             </div>
         </div>
