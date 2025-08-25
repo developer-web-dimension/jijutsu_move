@@ -54,10 +54,10 @@ class JujutsuHandSignTrainer:
         
         # Feature weights for accuracy
         self.weights = {
-            'landmarks': 0.15,
+            'landmarks': 0.2,
             'finger_positions': 0.25,
-            'hand_geometry': 0.2,
-            'finger_angles': 0.15
+            'hand_geometry': 0.3,
+            'finger_angles': 0.025,
         }
         
         # Flask-specific variables
@@ -329,7 +329,7 @@ class JujutsuHandSignTrainer:
         best_similarity = 0
         best_hand_data = None
         
-        # Compare with target sign
+        # Compare with target sign  
         sign_data = self.hand_sign_library[current_sign]
         for hand_data in sign_data['hands']:
             if hand_data['hand_type'] == live_hand_type:
@@ -1841,8 +1841,6 @@ html_template = '''<!DOCTYPE html>
             }
         });
 
-        
-        // REPLACE the existing socket.on('training_response', function(data) { ... });
         socket.on('training_response', function(data) {
             if (data.success) {
                 if (data.message.includes('started')) {
@@ -2055,7 +2053,6 @@ html_template = '''<!DOCTYPE html>
             return '#ff6b6b';
         }
 
-        // Add goHome function
         function goHome() {
             window.location.reload();
         }
