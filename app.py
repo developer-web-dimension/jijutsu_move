@@ -2057,9 +2057,7 @@ html_template = '''<!DOCTYPE html>
 
         // Add goHome function
         function goHome() {
-            // Hide results screen and show startup screen
-            document.getElementById('resultsScreen').style.display = 'none';
-            document.getElementById('startupScreen').style.display = 'block';
+            window.location.reload();
         }
 
         
