@@ -79,19 +79,24 @@ class JujutsuHandSignTrainer:
         
         processed_count = 0
         for i, image_path in enumerate(image_files):
+            sign_name = os.path.splitext(os.path.basename(image_path))[0]
             
             if self.process_single_image(image_path):
                 processed_count += 1
-                self.sign_list.append(os.path.splitext(os.path.basename(image_path))[0])
+                # Only add to sign_list if not already present (prevents duplicates)
+                if sign_name not in self.sign_list:
+                    self.sign_list.append(sign_name)
         
-
+        print(f"✅ Successfully processed {processed_count} images")
+        print(f"📋 Unique signs found: {len(self.sign_list)}")
+        print(f"🎯 Sign sequence: {self.sign_list}")
         
         return len(self.hand_sign_library) > 0
     
     def process_single_image(self, image_path):
         """Process a single image and extract hand sign features"""
         try:
-            # Read image
+            # Read image ONCE
             image = cv2.imread(image_path)
             if image is None:
                 print(f"⚠️  Could not read image: {image_path}")
@@ -118,19 +123,28 @@ class JujutsuHandSignTrainer:
                     }
                     hands_data.append(hand_data)
                 
-                # Store in library with processed display image
-                # Resize image for display during processing
+                # Resize image for display ONCE and store both original and display versions
                 height = 200
                 aspect_ratio = image.shape[1] / image.shape[0]
                 width = int(height * aspect_ratio)
-                display_image = cv2.resize(image, (width, height))
+                display_image_small = cv2.resize(image, (width, height))
+                
+                # Also create web display size (300px height for web)
+                web_height = 300
+                web_width = int(web_height * aspect_ratio)
+                display_image_web = cv2.resize(image, (web_width, web_height))
+                
+                # Encode web image to base64 immediately to avoid repeated file reads
+                _, buffer = cv2.imencode('.jpg', display_image_web)
+                web_image_base64 = base64.b64encode(buffer).decode('utf-8')
                 
                 self.hand_sign_library[sign_name] = {
                     'image_path': image_path,
                     'hands': hands_data,
                     'processed_time': time.time(),
-                    'completed': False,  # Track if user has successfully performed this sign
-                    'display_image': display_image  # Store resized image for display
+                    'completed': False,
+                    'display_image': display_image_small,  # Small version for processing display
+                    'web_image_base64': web_image_base64   # Pre-encoded base64 for web
                 }
                 
                 return True
@@ -417,8 +431,9 @@ class JujutsuHandSignTrainer:
             print(f"🎯 Next sign: {next_sign}")
             return False
     
+    # REPLACE the existing process_frame_from_websocket method with this simplified version:
     def process_frame_from_websocket(self, frame_data):
-        """Process frame sent from WebSocket with two-hand validation"""
+        """Process frame sent from WebSocket - simplified for auto-advance"""
         try:
             # Decode base64 image
             import io
@@ -446,70 +461,36 @@ class JujutsuHandSignTrainer:
             num_hands = len(results.multi_hand_landmarks) if results.multi_hand_landmarks else 0
             
             if results.multi_hand_landmarks and results.multi_handedness:
-                # Check if we have the required number of hands
+                hand_detected = True
+                
                 if num_hands < 2:
-                    hand_detected = True
                     self.current_status = f"Show BOTH hands ({num_hands}/2 detected)"
+                    self.current_accuracy = 15  # Low accuracy for single hand
+                else:
+                    # Process hands normally when we have both hands
+                    best_similarity = 0
+                    for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+                        if current_sign:
+                            similarity, _ = self.check_sign_match(hand_landmarks, handedness)
+                            best_similarity = max(best_similarity, similarity)
                     
-                    # Force low similarity for single hand
-                    low_similarity = 0.15  # 15% similarity for single hand
-                    self.similarity_buffer.append(low_similarity)
-                    smoothed_similarity = np.mean(list(self.similarity_buffer))
-                    self.current_accuracy = min(smoothed_similarity * 100, 25)  # Cap at 25%
-                    
-                    # Reset stable detections since we don't have both hands
-                    self.stable_detections = 0
-                    
-                    return {
-                        'training_complete': False,
-                        'accuracy': self.current_accuracy,
-                        'status': self.current_status,
-                        'hand_detected': hand_detected,
-                        'sign_completed': False
-                    }
-                
-                # Process hands normally when we have both hands
-                best_similarity = 0
-                for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
-                    hand_detected = True
                     if current_sign:
-                        # Check match with current target sign
-                        similarity, _ = self.check_sign_match(hand_landmarks, handedness)
-                        best_similarity = max(best_similarity, similarity)
-                
-                if current_sign and hand_detected:
-                    # Store similarity for smoothing
-                    self.similarity_buffer.append(best_similarity)
-                    smoothed_similarity = np.mean(list(self.similarity_buffer))
-                    self.current_accuracy = smoothed_similarity * 100
-                    
-                    # Check if detection is stable and accurate
-                    if smoothed_similarity >= self.detection_threshold and num_hands >= 2:
-                        self.stable_detections += 1
-                    else:
-                        self.stable_detections = max(0, self.stable_detections - 2)
-                    
-                    # Status based on similarity (only when we have both hands)
-                    if smoothed_similarity >= 0.65:
-                        self.current_status = "GREAT! ADVANCING..."
-                    elif smoothed_similarity >= 0.55:
-                        self.current_status = "ALMOST THERE!"
-                    elif smoothed_similarity >= 0.45:
-                        self.current_status = "GETTING CLOSER!"
-                    elif smoothed_similarity >= 0.35:
-                        self.current_status = "KEEP TRYING"
-                    else:
-                        self.current_status = "TRY AGAIN"
-                    
-                    # Check if ready to advance (requires both hands + threshold)
-                    if self.stable_detections >= self.required_stable_detections:
-                        return {
-                            'training_complete': self.advance_to_next_sign(),
-                            'accuracy': self.current_accuracy,
-                            'status': self.current_status,
-                            'hand_detected': True,
-                            'sign_completed': True
-                        }
+                        # Store similarity for display (no threshold checking)
+                        self.similarity_buffer.append(best_similarity)
+                        smoothed_similarity = np.mean(list(self.similarity_buffer))
+                        self.current_accuracy = smoothed_similarity * 100
+                        
+                        # Status based on similarity (for feedback only)
+                        if smoothed_similarity >= 0.65:
+                            self.current_status = "EXCELLENT!"
+                        elif smoothed_similarity >= 0.55:
+                            self.current_status = "VERY GOOD!"
+                        elif smoothed_similarity >= 0.45:
+                            self.current_status = "GOOD!"
+                        elif smoothed_similarity >= 0.35:
+                            self.current_status = "KEEP PRACTICING"
+                        else:
+                            self.current_status = "TRY THE POSE"
             
             if not hand_detected:
                 self.current_status = f'Show BOTH hands for sign: {current_sign if current_sign else "COMPLETE"}'
@@ -534,21 +515,11 @@ class JujutsuHandSignTrainer:
             }
     
     def get_current_sign_image_base64(self):
-        """Get current sign reference image as base64"""
+        """Get current sign reference image as base64 - using pre-stored version"""
         current_sign = self.get_current_sign()
         if current_sign and current_sign in self.hand_sign_library:
-            img_path = self.hand_sign_library[current_sign]['image_path']
-            img = cv2.imread(img_path)
-            if img is not None:
-                # Resize for web display
-                height = 300
-                aspect_ratio = img.shape[1] / img.shape[0]
-                width = int(height * aspect_ratio)
-                img_resized = cv2.resize(img, (width, height))
-                
-                _, buffer = cv2.imencode('.jpg', img_resized)
-                img_base64 = base64.b64encode(buffer).decode('utf-8')
-                return img_base64
+            # Return pre-encoded base64 image instead of reading from disk again
+            return self.hand_sign_library[current_sign].get('web_image_base64')
         return None
 
 # Initialize Flask app and SocketIO
@@ -582,6 +553,22 @@ def default_error_handler(e):
 def handle_connect():
     print('Client connected')
     emit('status', {'message': 'Connected to server'})
+
+
+    # Add this new WebSocket event handler
+@socketio.on('auto_advance_sign')
+def handle_auto_advance_sign():
+    """Auto-advance to next sign via WebSocket"""
+    is_complete = trainer.advance_to_next_sign()
+    next_sign = trainer.get_current_sign()
+    
+    emit('sign_auto_advanced', {
+        'success': True, 
+        'training_complete': is_complete,
+        'next_sign': next_sign,
+        'message': 'Auto-advanced to next sign!'
+    })
+
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -1741,6 +1728,9 @@ html_template = '''<!DOCTYPE html>
         let isTrainingActive = false;
         let timerInterval = null;
         let isAutoMode = false;
+        let signTimer = null;
+        let currentSignStartTime = null;
+        let timeRemaining = 5;
 
         // Connection status handlers
         socket.on('connect', function() {
@@ -1755,7 +1745,20 @@ html_template = '''<!DOCTYPE html>
             document.getElementById('connectionStatus').className = 'connection-status disconnected';
         });
         
-        // Socket event listeners
+
+        socket.on('sign_auto_advanced', function(data) {
+            if (data.training_complete) {
+                showNotification('Training Complete! All signs mastered!', 'success');
+                showCompletionScreen();
+            } else {
+                showNotification(`Advanced to: ${data.next_sign}`, 'success');
+                // Start timer for next sign
+                startSignTimer();
+            }
+        });
+
+        
+        // REPLACE the existing socket.on('training_response', function(data) { ... });
         socket.on('training_response', function(data) {
             if (data.success) {
                 if (data.message.includes('started')) {
@@ -1768,6 +1771,9 @@ html_template = '''<!DOCTYPE html>
                     
                     isTrainingActive = true;
                     
+                    // Start the first sign timer
+                    startSignTimer();
+                    
                     // Start periodic status updates
                     setInterval(() => {
                         if (isTrainingActive) {
@@ -1777,13 +1783,19 @@ html_template = '''<!DOCTYPE html>
                     }, 500);
                     
                     // Start frame processing
-                    // frameProcessingInterval = setInterval(captureAndSendFrame, 100); // 10 FPS
                     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                    const frameRate = isIOS ? 200 : 100; // 5 FPS for iOS, 10 FPS for others
+                    const frameRate = isIOS ? 200 : 100;
                     frameProcessingInterval = setInterval(captureAndSendFrame, frameRate);
                     
                     showNotification('Training started!');
                 } else if (data.message.includes('stopped')) {
+                    // Clear timer when stopping
+                    if (signTimer) {
+                        clearInterval(signTimer);
+                        signTimer = null;
+                    }
+                    document.getElementById('timerDisplay').style.display = 'none';
+                    
                     document.getElementById('startupScreen').style.display = 'block';
                     document.getElementById('trainingInterface').style.display = 'none';
                     document.getElementById('demoVideoScreen').style.display = 'none';
@@ -1921,6 +1933,56 @@ html_template = '''<!DOCTYPE html>
                 notification.classList.remove('show');
             }, 3000);
         }
+
+        // Add this new function
+        function updateTimerDisplay() {
+            const timerDisplay = document.getElementById('timerDisplay');
+            const timerNumber = document.getElementById('timerNumber');
+            
+            if (timeRemaining > 0) {
+                timerDisplay.style.display = 'block';
+                timerNumber.textContent = timeRemaining;
+                
+                // Style changes based on time remaining
+                timerDisplay.className = 'timer-display';
+                if (timeRemaining <= 2) {
+                    timerDisplay.classList.add('critical');
+                } else if (timeRemaining <= 3) {
+                    timerDisplay.classList.add('warning');
+                }
+            } else {
+                timerDisplay.style.display = 'none';
+            }
+        }
+
+        // Add this new function
+        function startSignTimer() {
+            // Clear any existing timer
+            if (signTimer) {
+                clearInterval(signTimer);
+            }
+            
+            timeRemaining = 5;
+            currentSignStartTime = Date.now();
+            
+            // Update timer display immediately
+            updateTimerDisplay();
+            
+            // Start countdown timer
+            signTimer = setInterval(() => {
+                timeRemaining--;
+                updateTimerDisplay();
+                
+                if (timeRemaining <= 0) {
+                    clearInterval(signTimer);
+                    signTimer = null;
+                    
+                    // Auto-advance to next sign
+                    socket.emit('auto_advance_sign');
+                }
+            }, 1000);
+        }
+
         
         function showDemoVideo() {
             // Hide startup screen and show demo video
@@ -1945,9 +2007,17 @@ html_template = '''<!DOCTYPE html>
             showNotification('Watching training demo... ⏯️');
         }
 
+        // REPLACE the existing showCompletionScreen function
         function showCompletionScreen() {
             // Stop training but don't go to home
             isTrainingActive = false;
+            
+            // Clear timer
+            if (signTimer) {
+                clearInterval(signTimer);
+                signTimer = null;
+            }
+            document.getElementById('timerDisplay').style.display = 'none';
             
             // Stop camera and intervals
             if (videoElement && videoElement.srcObject) {

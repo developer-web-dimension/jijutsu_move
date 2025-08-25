@@ -1040,6 +1040,9 @@
         let isTrainingActive = false;
         let timerInterval = null;
         let isAutoMode = false;
+        let signTimer = null;
+        let currentSignStartTime = null;
+        let timeRemaining = 5;
 
         // Connection status handlers
         socket.on('connect', function() {
@@ -1054,7 +1057,20 @@
             document.getElementById('connectionStatus').className = 'connection-status disconnected';
         });
         
-        // Socket event listeners
+
+        socket.on('sign_auto_advanced', function(data) {
+            if (data.training_complete) {
+                showNotification('Training Complete! All signs mastered!', 'success');
+                showCompletionScreen();
+            } else {
+                showNotification(`Advanced to: ${data.next_sign}`, 'success');
+                // Start timer for next sign
+                startSignTimer();
+            }
+        });
+
+        
+        // REPLACE the existing socket.on('training_response', function(data) { ... });
         socket.on('training_response', function(data) {
             if (data.success) {
                 if (data.message.includes('started')) {
@@ -1067,6 +1083,9 @@
                     
                     isTrainingActive = true;
                     
+                    // Start the first sign timer
+                    startSignTimer();
+                    
                     // Start periodic status updates
                     setInterval(() => {
                         if (isTrainingActive) {
@@ -1076,13 +1095,19 @@
                     }, 500);
                     
                     // Start frame processing
-                    // frameProcessingInterval = setInterval(captureAndSendFrame, 100); // 10 FPS
                     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                    const frameRate = isIOS ? 200 : 100; // 5 FPS for iOS, 10 FPS for others
+                    const frameRate = isIOS ? 200 : 100;
                     frameProcessingInterval = setInterval(captureAndSendFrame, frameRate);
                     
                     showNotification('Training started!');
                 } else if (data.message.includes('stopped')) {
+                    // Clear timer when stopping
+                    if (signTimer) {
+                        clearInterval(signTimer);
+                        signTimer = null;
+                    }
+                    document.getElementById('timerDisplay').style.display = 'none';
+                    
                     document.getElementById('startupScreen').style.display = 'block';
                     document.getElementById('trainingInterface').style.display = 'none';
                     document.getElementById('demoVideoScreen').style.display = 'none';
@@ -1220,6 +1245,56 @@
                 notification.classList.remove('show');
             }, 3000);
         }
+
+        // Add this new function
+        function updateTimerDisplay() {
+            const timerDisplay = document.getElementById('timerDisplay');
+            const timerNumber = document.getElementById('timerNumber');
+            
+            if (timeRemaining > 0) {
+                timerDisplay.style.display = 'block';
+                timerNumber.textContent = timeRemaining;
+                
+                // Style changes based on time remaining
+                timerDisplay.className = 'timer-display';
+                if (timeRemaining <= 2) {
+                    timerDisplay.classList.add('critical');
+                } else if (timeRemaining <= 3) {
+                    timerDisplay.classList.add('warning');
+                }
+            } else {
+                timerDisplay.style.display = 'none';
+            }
+        }
+
+        // Add this new function
+        function startSignTimer() {
+            // Clear any existing timer
+            if (signTimer) {
+                clearInterval(signTimer);
+            }
+            
+            timeRemaining = 5;
+            currentSignStartTime = Date.now();
+            
+            // Update timer display immediately
+            updateTimerDisplay();
+            
+            // Start countdown timer
+            signTimer = setInterval(() => {
+                timeRemaining--;
+                updateTimerDisplay();
+                
+                if (timeRemaining <= 0) {
+                    clearInterval(signTimer);
+                    signTimer = null;
+                    
+                    // Auto-advance to next sign
+                    socket.emit('auto_advance_sign');
+                }
+            }, 1000);
+        }
+
         
         function showDemoVideo() {
             // Hide startup screen and show demo video
@@ -1244,9 +1319,17 @@
             showNotification('Watching training demo... ⏯️');
         }
 
+        // REPLACE the existing showCompletionScreen function
         function showCompletionScreen() {
             // Stop training but don't go to home
             isTrainingActive = false;
+            
+            // Clear timer
+            if (signTimer) {
+                clearInterval(signTimer);
+                signTimer = null;
+            }
+            document.getElementById('timerDisplay').style.display = 'none';
             
             // Stop camera and intervals
             if (videoElement && videoElement.srcObject) {
