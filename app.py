@@ -28,8 +28,8 @@ class JujutsuHandSignTrainer:
         self.hands_live = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
-            min_detection_confidence=0.72,
-            min_tracking_confidence=0.6,
+            min_detection_confidence=0.8,
+            min_tracking_confidence=0.7,
             model_complexity=1
         )
         
@@ -54,10 +54,10 @@ class JujutsuHandSignTrainer:
         
         # Feature weights for accuracy
         self.weights = {
-            'landmarks': 0.1,
-            'finger_positions': 0.3,
+            'landmarks': 0.15,
+            'finger_positions': 0.25,
             'hand_geometry': 0.2,
-            'finger_angles': 0.3
+            'finger_angles': 0.15
         }
         
         # Flask-specific variables
@@ -1759,12 +1759,6 @@ html_template = '''<!DOCTYPE html>
             <h2>Congratulations!</h2>
             <div class="completion-message">
                 You have successfully mastered all the Jujutsu hand signs!
-            </div>
-            
-            <div class="completion-actions">
-                <button class="btn-restart" onclick="restartTraining()">
-                    🔄 Train Again
-                </button>
             </div>
         </div>
         <div id="resultsScreen" class="results-screen" style="display: none;">
