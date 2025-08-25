@@ -1814,7 +1814,7 @@ html_template = '''<!DOCTYPE html>
         let isAutoMode = false;
         let signTimer = null;
         let currentSignStartTime = null;
-        let timeRemaining = 5;
+        let timeRemaining = 10;
 
         // Connection status handlers
         socket.on('connect', function() {
@@ -2097,7 +2097,7 @@ html_template = '''<!DOCTYPE html>
                 clearInterval(signTimer);
             }
             
-            timeRemaining = 5;
+            timeRemaining = 10;
             currentSignStartTime = Date.now();
             
             // Update timer display immediately
