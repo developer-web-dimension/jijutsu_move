@@ -582,8 +582,27 @@ def default_error_handler(e):
 # WebSocket events
 @socketio.on('connect')
 def handle_connect():
-    print('Client connected')
-    emit('status', {'message': 'Connected to server'})
+    print('Client connected - Resetting trainer state')
+    
+    # Reset trainer state on new connection (page refresh)
+    trainer.current_sign_index = 0
+    trainer.stable_detections = 0
+    trainer.similarity_buffer.clear()
+    trainer.training_active = False
+    trainer.current_accuracy = 0
+    trainer.current_status = "Position your hand"
+    
+    # Clear max accuracy tracking
+    trainer.sign_max_accuracies.clear()
+    trainer.current_sign_start_time = None
+    
+    # Reset all signs to not completed
+    for sign_name in trainer.sign_list:
+        if sign_name in trainer.hand_sign_library:
+            trainer.hand_sign_library[sign_name]['completed'] = False
+    
+    emit('status', {'message': 'Connected to server - Training reset'})
+    print('Trainer state reset for new client')
 
 
     # Add this new WebSocket event handler
